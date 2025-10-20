@@ -1,0 +1,304 @@
+import { ipcRenderer, shell } from "electron";
+import { globalEvents } from "../../constants/globalEvents";
+import { settings } from "../../constants/settings";
+import { settingsStore } from "../../store/settingsStore";
+import { Logger } from "../../utils/logger";
+
+// All switches on the settings screen that show additional options based on their state
+const switchesWithSettings = {
+	listenBrainz: {
+		switch: "enableListenBrainz",
+		classToHide: "listenbrainz__options",
+		settingsKey: settings.ListenBrainz.enabled,
+	},
+	discord: {
+		switch: "enableDiscord",
+		classToHide: "discord_options",
+		settingsKey: settings.enableDiscord,
+	},
+	discord_show_song: {
+		switch: "discord_show_song",
+		classToHide: "discord_show_song_options",
+		settingsKey: settings.discord.showSong,
+	},
+};
+
+let adBlock: HTMLInputElement,
+	api: HTMLInputElement,
+	channel: HTMLSelectElement,
+	disableBackgroundThrottle: HTMLInputElement,
+	disableHardwareMediaKeys: HTMLInputElement,
+	enableDiscord: HTMLInputElement,
+	gpuRasterization: HTMLInputElement,
+	hostname: HTMLInputElement,
+	menuBar: HTMLInputElement,
+	minimizeOnClose: HTMLInputElement,
+	mpris: HTMLInputElement,
+	notifications: HTMLInputElement,
+	playBackControl: HTMLInputElement,
+	port: HTMLInputElement,
+	singleInstance: HTMLInputElement,
+	skipArtists: HTMLInputElement,
+	skippedArtists: HTMLInputElement,
+	staticWindowTitle: HTMLInputElement,
+	theme: HTMLSelectElement,
+	trayIcon: HTMLInputElement,
+	updateFrequency: HTMLInputElement,
+	enableListenBrainz: HTMLInputElement,
+	ListenBrainzAPI: HTMLInputElement,
+	ListenBrainzToken: HTMLInputElement,
+	listenbrainz_delay: HTMLInputElement,
+	enableWaylandSupport: HTMLInputElement,
+	discord_details_prefix: HTMLInputElement,
+	discord_include_timestamps: HTMLInputElement,
+	discord_button_text: HTMLInputElement,
+	discord_show_song: HTMLInputElement,
+	discord_show_idle: HTMLInputElement,
+	discord_idle_text: HTMLInputElement,
+	discord_using_text: HTMLInputElement;
+
+/**
+ * hide or unhide an element
+ * @param checked
+ * @param toggleOptions
+ */
+function setElementHidden(
+	checked: boolean,
+	toggleOptions: { switch: string; classToHide: string },
+) {
+	const element = document.getElementById(toggleOptions.classToHide);
+
+	checked
+		? element.classList.remove("hidden")
+		: element.classList.add("hidden");
+}
+
+/**
+ * Sync the UI forms with the current settings
+ */
+function refreshSettings() {
+	try {
+		adBlock.checked = settingsStore.get(settings.adBlock);
+		api.checked = settingsStore.get(settings.api);
+		channel.value = settingsStore.get(settings.advanced.qobuzUrl);
+		disableBackgroundThrottle.checked = settingsStore.get(
+			settings.disableBackgroundThrottle,
+		);
+		disableHardwareMediaKeys.checked = settingsStore.get(
+			settings.flags.disableHardwareMediaKeys,
+		);
+		enableDiscord.checked = settingsStore.get(settings.enableDiscord);
+		enableWaylandSupport.checked = settingsStore.get(
+			settings.flags.enableWaylandSupport,
+		);
+		gpuRasterization.checked = settingsStore.get(
+			settings.flags.gpuRasterization,
+		);
+		hostname.value = settingsStore.get(settings.apiSettings.hostname);
+		menuBar.checked = settingsStore.get(settings.menuBar);
+		minimizeOnClose.checked = settingsStore.get(settings.minimizeOnClose);
+		mpris.checked = settingsStore.get(settings.mpris);
+		notifications.checked = settingsStore.get(settings.notifications);
+		playBackControl.checked = settingsStore.get(settings.playBackControl);
+		port.value = settingsStore.get(settings.apiSettings.port);
+		singleInstance.checked = settingsStore.get(settings.singleInstance);
+		skipArtists.checked = settingsStore.get(settings.skipArtists);
+		skippedArtists.value = settingsStore
+			.get<string, string[]>(settings.skippedArtists)
+			.join("\n");
+		staticWindowTitle.checked = settingsStore.get(settings.staticWindowTitle);
+		theme.value = settingsStore.get(settings.theme);
+		trayIcon.checked = settingsStore.get(settings.trayIcon);
+		updateFrequency.value = settingsStore.get(settings.updateFrequency);
+		enableListenBrainz.checked = settingsStore.get(
+			settings.ListenBrainz.enabled,
+		);
+		ListenBrainzAPI.value = settingsStore.get(settings.ListenBrainz.api);
+		ListenBrainzToken.value = settingsStore.get(settings.ListenBrainz.token);
+		listenbrainz_delay.value = settingsStore.get(settings.ListenBrainz.delay);
+		discord_details_prefix.value = settingsStore.get(
+			settings.discord.detailsPrefix,
+		);
+		discord_include_timestamps.checked = settingsStore.get(
+			settings.discord.includeTimestamps,
+		);
+		discord_button_text.value = settingsStore.get(settings.discord.buttonText);
+		discord_show_song.checked = settingsStore.get(settings.discord.showSong);
+		discord_show_idle.checked = settingsStore.get(settings.discord.showIdle);
+		discord_idle_text.value = settingsStore.get(settings.discord.idleText);
+		discord_using_text.value = settingsStore.get(settings.discord.usingText);
+
+		// set state of all switches with additional settings
+		Object.values(switchesWithSettings).forEach((settingSwitch) => {
+			setElementHidden(
+				settingsStore.get(settingSwitch.settingsKey),
+				settingSwitch,
+			);
+		});
+	} catch (error) {
+		Logger.log("Refreshing settings failed.", error);
+	}
+}
+
+/**
+ * Open an url in the default browsers
+ */
+function openExternal(url: string) {
+	shell.openExternal(url);
+}
+
+/**
+ * hide the settings window
+ */
+function hide() {
+	ipcRenderer.send(globalEvents.hideSettings);
+}
+
+/**
+ * Bind UI components to functions after DOMContentLoaded
+ */
+window.addEventListener("DOMContentLoaded", () => {
+	function get<T = HTMLInputElement>(id: string): T {
+		return document.getElementById(id) as T;
+	}
+
+	document.getElementById("close").addEventListener("click", hide);
+	document.querySelectorAll(".external-link").forEach((elem) =>
+		elem.addEventListener("click", (event) => {
+			openExternal((event.target as HTMLElement).getAttribute("data-url"));
+		}),
+	);
+
+	function addInputListener(
+		source: HTMLInputElement,
+		key: string,
+		toggleOptions?: { switch: string; classToHide: string },
+	) {
+		source.addEventListener("input", () => {
+			if (source.value === "on") {
+				settingsStore.set(key, source.checked);
+			} else {
+				settingsStore.set(key, source.value);
+			}
+
+			if (toggleOptions) {
+				if (source.value === "on" && source.id === toggleOptions.switch) {
+					setElementHidden(source.checked, toggleOptions);
+				}
+			}
+			ipcRenderer.send(globalEvents.storeChanged);
+		});
+	}
+
+	function addTextAreaListener(source: HTMLInputElement, key: string) {
+		source.addEventListener("input", () => {
+			settingsStore.set(key, source.value.split("\n"));
+			ipcRenderer.send(globalEvents.storeChanged);
+		});
+	}
+
+	function addSelectListener(source: HTMLSelectElement, key: string) {
+		source.addEventListener("change", () => {
+			settingsStore.set(key, source.value);
+			ipcRenderer.send(globalEvents.storeChanged);
+		});
+	}
+
+	ipcRenderer.on("refreshData", () => {
+		refreshSettings();
+	});
+
+	ipcRenderer.on("goToTab", (_, tab) => {
+		document.getElementById(tab).click();
+	});
+
+	adBlock = get("adBlock");
+	api = get("apiCheckbox");
+	channel = get<HTMLSelectElement>("channel");
+	disableBackgroundThrottle = get("disableBackgroundThrottle");
+	disableHardwareMediaKeys = get("disableHardwareMediaKeys");
+	enableDiscord = get("enableDiscord");
+	enableWaylandSupport = get("enableWaylandSupport");
+	gpuRasterization = get("gpuRasterization");
+	hostname = get("hostname");
+	menuBar = get("menuBar");
+	minimizeOnClose = get("minimizeOnClose");
+	mpris = get("mprisCheckbox");
+	notifications = get("notifications");
+	playBackControl = get("playBackControl");
+	port = get("port");
+	theme = get<HTMLSelectElement>("themesList");
+	trayIcon = get("trayIcon");
+	skipArtists = get("skipArtists");
+	skippedArtists = get("skippedArtists");
+	staticWindowTitle = get("staticWindowTitle");
+	singleInstance = get("singleInstance");
+	updateFrequency = get("updateFrequency");
+	enableListenBrainz = get("enableListenBrainz");
+	ListenBrainzAPI = get("ListenBrainzAPI");
+	ListenBrainzToken = get("ListenBrainzToken");
+	discord_details_prefix = get("discord_details_prefix");
+	discord_include_timestamps = get("discord_include_timestamps");
+	listenbrainz_delay = get("listenbrainz_delay");
+	discord_button_text = get("discord_button_text");
+	discord_show_song = get("discord_show_song");
+	discord_show_idle = get("discord_show_idle");
+	discord_using_text = get("discord_using_text");
+	discord_idle_text = get("discord_idle_text");
+
+	refreshSettings();
+	addInputListener(adBlock, settings.adBlock);
+	addInputListener(api, settings.api);
+	addSelectListener(channel, settings.advanced.qobuzUrl);
+	addInputListener(
+		disableBackgroundThrottle,
+		settings.disableBackgroundThrottle,
+	);
+	addInputListener(
+		disableHardwareMediaKeys,
+		settings.flags.disableHardwareMediaKeys,
+	);
+	addInputListener(
+		enableDiscord,
+		settings.enableDiscord,
+		switchesWithSettings.discord,
+	);
+	addInputListener(enableWaylandSupport, settings.flags.enableWaylandSupport);
+	addInputListener(gpuRasterization, settings.flags.gpuRasterization);
+	addInputListener(hostname, settings.apiSettings.hostname);
+	addInputListener(menuBar, settings.menuBar);
+	addInputListener(minimizeOnClose, settings.minimizeOnClose);
+	addInputListener(mpris, settings.mpris);
+	addInputListener(notifications, settings.notifications);
+	addInputListener(playBackControl, settings.playBackControl);
+	addInputListener(port, settings.apiSettings.port);
+	addInputListener(skipArtists, settings.skipArtists);
+	addTextAreaListener(skippedArtists, settings.skippedArtists);
+	addInputListener(staticWindowTitle, settings.staticWindowTitle);
+	addInputListener(singleInstance, settings.singleInstance);
+	addSelectListener(theme, settings.theme);
+	addInputListener(trayIcon, settings.trayIcon);
+	addInputListener(updateFrequency, settings.updateFrequency);
+	addInputListener(
+		enableListenBrainz,
+		settings.ListenBrainz.enabled,
+		switchesWithSettings.listenBrainz,
+	);
+	addInputListener(ListenBrainzAPI, settings.ListenBrainz.api);
+	addInputListener(ListenBrainzToken, settings.ListenBrainz.token);
+	addInputListener(listenbrainz_delay, settings.ListenBrainz.delay);
+	addInputListener(discord_details_prefix, settings.discord.detailsPrefix);
+	addInputListener(
+		discord_include_timestamps,
+		settings.discord.includeTimestamps,
+	);
+	addInputListener(discord_button_text, settings.discord.buttonText);
+	addInputListener(
+		discord_show_song,
+		settings.discord.showSong,
+		switchesWithSettings.discord_show_song,
+	);
+	addInputListener(discord_show_idle, settings.discord.showIdle);
+	addInputListener(discord_idle_text, settings.discord.idleText);
+	addInputListener(discord_using_text, settings.discord.usingText);
+});
